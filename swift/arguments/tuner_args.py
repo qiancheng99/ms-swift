@@ -44,6 +44,8 @@ class TunerArguments:
         freeze_aligner (bool): For multi-modal models only. If `True`, it affects the aligner (projector) part.
             In full fine-tuning, this freezes the aligner weights. In LoRA training with
             `target_modules=['all-linear']`, this prevents adding LoRA modules to the aligner. Defaults to `True`.
+        freeze_router (bool): For MoE models only. If `True`, it freezes router/gate parameters during full
+            fine-tuning and avoids attaching adapters to router modules. Defaults to `False`.
 
         target_modules (List[str]): List of target modules for tuning. Default is ['all-linear'].
         target_regex (Optional[str]): Regular expression to match target modules. Default is None.
@@ -143,6 +145,7 @@ class TunerArguments:
     freeze_llm: bool = False
     freeze_vit: bool = True
     freeze_aligner: bool = True
+    freeze_router: bool = False
     # tuners
     target_modules: List[str] = field(default_factory=lambda: ['all-linear'])
     target_regex: Optional[str] = None

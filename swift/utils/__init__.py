@@ -19,7 +19,8 @@ from .torch_utils import (Serializer, check_shared_disk, disable_safe_ddp_contex
                           get_last_valid_indices, get_torch_device, init_process_group, safe_ddp_context,
                           set_default_ddp_config, set_device, time_synchronize, to_device, to_float_dtype)
 from .transformers_utils import (activate_parameters, disable_deepspeed_zero3, find_all_linears, find_embedding,
-                                 find_layers, find_norm, find_sub_module, freeze_parameters,
+                                 find_layers, find_norm, find_router_modules, find_sub_module, freeze_parameters,
+                                 freeze_router_parameters,
                                  get_cu_seqlens_from_position_ids, get_model_parameter_info, get_modules_to_not_convert,
                                  get_multimodal_target_regex, get_n_params_grads, get_packed_seq_params,
                                  get_position_ids_from_cu_seqlens, seed_worker, show_layers,

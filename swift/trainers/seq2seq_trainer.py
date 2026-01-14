@@ -114,10 +114,24 @@ class Seq2SeqTrainer(SwiftMixin, DataLoaderMixin, HfSeq2SeqTrainer):
             HfConfigFactory.set_config_attr(base_model.config, 'router_aux_loss_coef', args.router_aux_loss_coef)
             base_model.router_aux_loss_coef = args.router_aux_loss_coef
             logger.info_once(f'router_aux_loss_coef: {args.router_aux_loss_coef}')
-            if args.router_aux_loss_coef > 0:
+            if args.router_aux_loss_coef > 0 or args.router_z_loss_coef > 0:
                 inputs['output_router_logits'] = True
         inputs['compute_loss_func'] = self.compute_loss_func
         return inputs
+
+    @staticmethod
+    def _compute_router_z_loss(router_logits: Any) -> Optional[torch.Tensor]:
+        if router_logits is None:
+            return None
+        if isinstance(router_logits, torch.Tensor):
+            router_logits = (router_logits,)
+        losses = []
+        for logits in router_logits:
+            log_z = torch.logsumexp(logits.float(), dim=-1)
+            losses.append((log_z**2).mean())
+        if not losses:
+            return None
+        return torch.stack(losses).mean()
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         labels = None
@@ -209,6 +223,14 @@ class Seq2SeqTrainer(SwiftMixin, DataLoaderMixin, HfSeq2SeqTrainer):
                     if num_items_in_batch is not None:
                         aux_loss = aux_loss * ((labels[:, 1:] != -100).sum() / num_items_in_batch)
                     loss = loss + self.args.router_aux_loss_coef * aux_loss.to(loss.device)
+            if self.model.model_info.is_moe_model and self.args.router_z_loss_coef > 0:
+                z_loss = self._compute_router_z_loss(outputs.get('router_logits'))
+                if z_loss is not None:
+                    if num_items_in_batch is not None:
+                        z_loss = z_loss * ((labels[:, 1:] != -100).sum() / num_items_in_batch)
+                    mode = 'train' if self.model.training else 'eval'
+                    self.custom_metrics[mode]['z_loss'].update(z_loss)
+                    loss = loss + self.args.router_z_loss_coef * z_loss.to(loss.device)
 
         if getattr(self.args, 'average_tokens_across_devices',
                    False) and self.model_accepts_loss_kwargs and num_items_in_batch is not None:
