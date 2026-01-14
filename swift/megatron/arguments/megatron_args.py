@@ -288,6 +288,7 @@ class MegatronTunerMixin:
     freeze_llm: bool = False
     freeze_vit: bool = True
     freeze_aligner: bool = True
+    freeze_router: bool = False
     # full
     freeze_parameters: List[str] = field(default_factory=list)
     freeze_parameters_regex: Optional[str] = None
