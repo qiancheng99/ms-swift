@@ -41,6 +41,16 @@ def find_router(model):
     return find_layers(model, lambda name, module: isinstance(module, TopKRouter))
 
 
+def freeze_router_parameters(model):
+    router_modules = find_router(model)
+    if not router_modules:
+        logger.warning('freeze_router is enabled but no router modules were found.')
+        return
+    for name, param in model.named_parameters():
+        if any(name.startswith(f'{router}.') or name == router for router in router_modules):
+            param.requires_grad = False
+
+
 def find_embedding(model):
     return find_layers(model, lambda name, module: isinstance(module, LanguageModelEmbedding))
 
@@ -111,6 +121,10 @@ def get_target_modules(args, model):
     if 'all-router' in target_modules:
         target_modules.remove('all-router')
         target_modules += find_router(model)
+    if args.freeze_router:
+        router_modules = set(find_router(model))
+        if router_modules:
+            target_modules = [name for name in target_modules if name not in router_modules]
     return target_modules
 
 
@@ -186,6 +200,8 @@ def prepare_mcore_model(model):
     args = get_args()
     if args.train_type == 'full':
         freeze_parameters(model, args.freeze_parameters_ratio, args.freeze_parameters, args.freeze_parameters_regex)
+        if args.freeze_router:
+            freeze_router_parameters(model)
         if args.trainable_parameters or args.trainable_parameters_regex:
             activate_parameters(model, args.trainable_parameters, args.trainable_parameters_regex)
     elif args.train_type == 'lora':
