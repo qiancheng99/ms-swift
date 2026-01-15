@@ -59,6 +59,27 @@ def find_sub_module(module: torch.nn.Module, module_name: str) -> List[torch.nn.
     return _modules
 
 
+def find_router_modules(model: nn.Module) -> List[str]:
+    def _cond(name: str, module: nn.Module) -> bool:
+        if name.endswith('router') or name.endswith('gate'):
+            return True
+        return 'router' in module.__class__.__name__.lower()
+
+    return find_layers(model, _cond)
+
+
+def freeze_router_parameters(model: nn.Module) -> None:
+    router_modules = find_router_modules(model)
+    if not router_modules:
+        logger.warning('freeze_router is enabled but no router modules were found.')
+        return
+    for name, param in model.named_parameters():
+        if any(
+            name == router or name.startswith(f'{router}.') or f'.{router}.' in name or name.endswith(f'.{router}')
+            for router in router_modules):
+            param.requires_grad = False
+
+
 def show_layers(model: nn.Module, max_lines: Optional[int] = 20) -> None:
     named_p = list(model.named_parameters())
     for i, (n, p) in enumerate(named_p):

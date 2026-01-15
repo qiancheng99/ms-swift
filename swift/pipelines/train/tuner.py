@@ -11,8 +11,8 @@ from swift.arguments import SftArguments
 from swift.optimizers.galore import GaLoreConfig, calculate_max_steps
 from swift.plugins import Tuner, extra_tuners
 from swift.tuners import Swift
-from swift.utils import (activate_parameters, find_all_linears, find_embedding, find_norm, freeze_parameters,
-                         get_logger, get_multimodal_target_regex)
+from swift.utils import (activate_parameters, find_all_linears, find_embedding, find_norm, find_router_modules,
+                         freeze_parameters, freeze_router_parameters, get_logger, get_multimodal_target_regex)
 
 logger = get_logger()
 
@@ -98,6 +98,7 @@ def get_target_modules(args, model) -> Union[str, List[str]]:
                 freeze_llm=args.freeze_llm,
                 freeze_vit=args.freeze_vit,
                 freeze_aligner=args.freeze_aligner,
+                exclude_router=args.freeze_router,
                 include_embedding='all-embedding' in target_modules)
         else:
             target_modules.remove('all-linear')
@@ -105,6 +106,10 @@ def get_target_modules(args, model) -> Union[str, List[str]]:
     if 'all-embedding' in target_modules:
         target_modules.remove('all-embedding')
         target_modules += find_embedding(model)
+    if args.freeze_router and model.model_info.is_moe_model:
+        router_modules = set(find_router_modules(model))
+        if router_modules:
+            target_modules = [name for name in target_modules if name not in router_modules]
     return target_modules
 
 
@@ -357,6 +362,8 @@ class TunerMixin:
             model.requires_grad_(True)
 
             freeze_parameters(model, args.freeze_parameters_ratio, args.freeze_parameters, args.freeze_parameters_regex)
+            if args.freeze_router and model.model_info.is_moe_model:
+                freeze_router_parameters(model)
             if args.trainable_parameters or args.trainable_parameters_regex:
                 activate_parameters(model, args.trainable_parameters, args.trainable_parameters_regex)
         else:

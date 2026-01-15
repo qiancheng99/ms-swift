@@ -36,6 +36,8 @@ class TrainArgumentsMixin:
         logging_steps (int): Log every `logging_steps` global steps. Defaults to 5.
         router_aux_loss_coef (float): The coefficient for the router auxiliary loss in Mixture-of-Experts models.
             Defaults to 0.0.
+        router_z_loss_coef (float): The coefficient for the router z-loss regularization in Mixture-of-Experts models.
+            Defaults to 0.0.
         enable_dft_loss (bool): Whether to enable Diversity-from-Diversity (DFD) loss.
             See https://arxiv.org/abs/2508.05629. Defaults to False.
         enable_channel_loss (bool): Whether to enable channel loss. Defaults to False.
@@ -104,6 +106,7 @@ class TrainArgumentsMixin:
     logging_first_step: bool = True
     logging_steps: int = 5
     router_aux_loss_coef: float = 0.
+    router_z_loss_coef: float = 0.
     enable_dft_loss: bool = False  # https://arxiv.org/abs/2508.05629
     enable_channel_loss: bool = False
 
