@@ -339,6 +339,9 @@ class ExtraMegatronArguments(RLHFMegatronArgumentsMixin, MegatronTunerMixin):
         default=None, metadata={'help': 'SDK token can be found in https://modelscope.cn/my/myaccesstoken'})
     merge_lora: Optional[bool] = None
     max_shard_size: str = '5GB'
+    moe_save_router_stats: bool = False
+    moe_router_stats_interval: int = 100
+    moe_router_stats_dir: Optional[str] = None
 
     # dataloader
     train_dataloader_shuffle: bool = True

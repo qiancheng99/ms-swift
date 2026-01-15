@@ -1,5 +1,7 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 from contextlib import contextmanager
+import os
+from typing import Dict, Optional
 from typing import Optional, Tuple
 
 import megatron.core
@@ -24,6 +26,7 @@ from swift.utils import (activate_parameters, deep_getattr, find_layers, freeze_
 mcore_013 = version.parse(megatron.core.__version__) >= version.parse('0.13.0rc0')
 
 logger = get_logger()
+_ROUTER_STATS: Dict[str, Optional[torch.Tensor]] = {'indices': None}
 
 
 def find_all_linears(model):
@@ -47,8 +50,63 @@ def freeze_router_parameters(model):
         logger.warning('freeze_router is enabled but no router modules were found.')
         return
     for name, param in model.named_parameters():
-        if any(name.startswith(f'{router}.') or name == router for router in router_modules):
+        if any(
+            name == router or name.startswith(f'{router}.') or f'.{router}.' in name or name.endswith(f'.{router}')
+            for router in router_modules):
             param.requires_grad = False
+
+
+def register_router_stats_hooks(model) -> None:
+    for module in model.modules():
+        if not isinstance(module, TopKRouter):
+            continue
+        if getattr(module, '_swift_router_stats_hook', False):
+            continue
+
+        def _hook(_module, _inputs, output):
+            indices = None
+            if isinstance(output, dict):
+                for key in ('indices', 'router_indices', 'expert_indices'):
+                    if key in output:
+                        indices = output[key]
+                        break
+            elif isinstance(output, (tuple, list)):
+                for item in output:
+                    if torch.is_tensor(item) and item.dtype in (torch.int32, torch.int64):
+                        indices = item
+                        break
+            elif torch.is_tensor(output) and output.dtype in (torch.int32, torch.int64):
+                indices = output
+            if indices is not None:
+                _ROUTER_STATS['indices'] = indices.detach()
+
+        module.register_forward_hook(_hook)
+        module._swift_router_stats_hook = True
+
+
+def save_router_stats(iteration: int) -> None:
+    args = get_args()
+    if not args.moe_save_router_stats:
+        return
+    if dist.is_initialized() and dist.get_rank() != 0:
+        return
+    indices = _ROUTER_STATS.get('indices')
+    if indices is None:
+        logger.warning('moe_save_router_stats is enabled but no router indices were captured.')
+        return
+    stats_dir = args.moe_router_stats_dir or os.path.join(args.save, 'router_stats')
+    os.makedirs(stats_dir, exist_ok=True)
+    indices = indices.flatten().cpu().numpy()
+    counts = None
+    if args.num_experts:
+        counts = torch.bincount(torch.as_tensor(indices), minlength=args.num_experts).cpu().numpy()
+    file_path = os.path.join(stats_dir, f'router_stats_iter_{iteration}.npz')
+    if counts is None:
+        import numpy as np
+        np.savez(file_path, indices=indices)
+    else:
+        import numpy as np
+        np.savez(file_path, indices=indices, counts=counts)
 
 
 def find_embedding(model):
@@ -207,6 +265,8 @@ def prepare_mcore_model(model):
     elif args.train_type == 'lora':
         model.prepare_inputs_for_generation = None  # fix error
         model = prepare_adapter(model)
+    if args.moe_save_router_stats:
+        register_router_stats_hooks(model)
     logger.info(f'model: {model}')
     logger.info_if(
         f'[rank{dist.get_rank()}] model_parameter_info: {get_model_parameter_info(model)}',

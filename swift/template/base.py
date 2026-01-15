@@ -1115,6 +1115,33 @@ class Template(ProcessorMixin):
             None. The input messages list is updated in-place.
         """
         messages = inputs.messages
+        i = 0
+        while i < len(messages):
+            message = messages[i]
+            role = message.get('role')
+            if role == 'observer':
+                message['role'] = 'user'
+                content = message.get('content')
+                if isinstance(content, str) and content:
+                    message['content'] = f'Observer:\n{content}'
+                i += 1
+                continue
+            if role == 'tool':
+                content = message.get('content')
+                if isinstance(content, str) and content:
+                    tool_content = f'Tool:\n{content}'
+                else:
+                    tool_content = 'Tool:'
+                if i + 1 < len(messages) and messages[i + 1].get('role') == 'user':
+                    next_content = messages[i + 1].get('content') or ''
+                    if isinstance(next_content, str):
+                        messages[i + 1]['content'] = f'{tool_content}\n{next_content}'
+                    messages.pop(i)
+                    continue
+                message['role'] = 'user'
+                if isinstance(content, str):
+                    message['content'] = tool_content
+            i += 1
         if len(messages) < 2:
             return
         i = 1

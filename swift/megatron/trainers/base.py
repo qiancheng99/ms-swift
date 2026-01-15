@@ -38,7 +38,7 @@ from tqdm.auto import tqdm
 
 from swift.megatron.tuners import LoraParallelLinear
 from swift.megatron.utils import (adapter_state_dict_context, copy_original_module_weight, patch_merge_fn,
-                                  prepare_mcore_model)
+                                  prepare_mcore_model, save_router_stats)
 from swift.metrics import MeanMetric
 from swift.template import Template
 from swift.trainers import SwiftMixin, dynamic_gradient_checkpointing
@@ -898,6 +898,8 @@ class BaseMegatronTrainer(ABC):
         if iteration % args.log_interval == 0 or iteration == 1:
             self.custom_log(total_loss_dict, 'train')
             origin_total_loss_dict = total_loss_dict.copy()
+            if args.moe_save_router_stats and iteration % args.moe_router_stats_interval == 0:
+                save_router_stats(iteration)
 
             if args.record_memory_history and is_last_rank():
                 snapshot = torch.cuda.memory._snapshot()

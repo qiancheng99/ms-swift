@@ -74,7 +74,9 @@ def freeze_router_parameters(model: nn.Module) -> None:
         logger.warning('freeze_router is enabled but no router modules were found.')
         return
     for name, param in model.named_parameters():
-        if any(name.startswith(f'{router}.') or name == router for router in router_modules):
+        if any(
+            name == router or name.startswith(f'{router}.') or f'.{router}.' in name or name.endswith(f'.{router}')
+            for router in router_modules):
             param.requires_grad = False
 
 
