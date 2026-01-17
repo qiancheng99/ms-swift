@@ -26,8 +26,13 @@ from swift.utils import (activate_parameters, deep_getattr, find_layers, freeze_
 mcore_013 = version.parse(megatron.core.__version__) >= version.parse('0.13.0rc0')
 
 logger = get_logger()
-_ROUTER_STATS: Dict[str, Optional[torch.Tensor]] = {'indices': None, 'input_ids': None, 'position_ids': None,
-                                                   'sample_ids': None}
+_ROUTER_STATS: Dict[str, Optional[torch.Tensor]] = {
+    'indices': None,
+    'indices_by_layer': {},
+    'input_ids': None,
+    'position_ids': None,
+    'sample_ids': None,
+}
 
 
 def find_all_linears(model):
@@ -58,13 +63,13 @@ def freeze_router_parameters(model):
 
 
 def register_router_stats_hooks(model) -> None:
-    for module in model.modules():
+    for name, module in model.named_modules():
         if not isinstance(module, TopKRouter):
             continue
         if getattr(module, '_swift_router_stats_hook', False):
             continue
 
-        def _hook(_module, _inputs, output):
+        def _hook(_module, _inputs, output, *, layer_name=name):
             indices = None
             if hasattr(output, 'indices'):
                 indices = getattr(output, 'indices')
@@ -90,7 +95,9 @@ def register_router_stats_hooks(model) -> None:
             elif torch.is_tensor(output) and output.dtype in (torch.int32, torch.int64):
                 indices = output
             if indices is not None:
-                _ROUTER_STATS['indices'] = indices.detach()
+                indices = indices.detach()
+                _ROUTER_STATS['indices'] = indices
+                _ROUTER_STATS['indices_by_layer'][layer_name] = indices
 
         module.register_forward_hook(_hook)
         module._swift_router_stats_hook = True
@@ -116,6 +123,19 @@ def save_router_stats(iteration: int) -> None:
     payload = {'indices': indices}
     if counts is not None:
         payload['counts'] = counts
+    indices_by_layer = _ROUTER_STATS.get('indices_by_layer') or {}
+    if indices_by_layer:
+        layer_names = []
+        for layer_name, layer_indices in indices_by_layer.items():
+            layer_key = f'indices__{layer_name.replace(".", "_")}'
+            payload[layer_key] = layer_indices.flatten().cpu().numpy()
+            layer_names.append(layer_name)
+            if args.num_experts:
+                layer_counts = torch.bincount(
+                    torch.as_tensor(layer_indices.flatten(), dtype=torch.int64),
+                    minlength=args.num_experts).cpu().numpy()
+                payload[f'counts__{layer_name.replace(".", "_")}'] = layer_counts
+        payload['layer_names'] = np.array(layer_names)
     input_ids = _ROUTER_STATS.get('input_ids')
     if input_ids is not None:
         payload['input_ids'] = input_ids.cpu().numpy()
