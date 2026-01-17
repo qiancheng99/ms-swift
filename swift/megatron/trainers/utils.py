@@ -18,6 +18,7 @@ from packaging import version
 from transformers.utils import is_torch_npu_available
 
 from swift.utils import empty_cache, get_current_device, get_logger
+from swift.megatron.utils.utils import record_router_stats_inputs
 from swift.utils import get_packed_seq_params as _get_packed_seq_params
 from swift.utils import to_device
 
@@ -58,6 +59,9 @@ def get_batch_on_this_tp_rank(data, vp_stage=None):
         if 'loss_scale' in data:
             data['loss_scale'] = torch.roll(data['loss_scale'], -1, dims=-1)
     batch = to_device(data, 'cuda', non_blocking=True)
+    if args.moe_save_router_stats and (not mcore_013 or mpu.is_pipeline_first_stage(ignore_virtual=False,
+                                                                                     vp_stage=vp_stage)):
+        record_router_stats_inputs(batch)
     if args.pipeline_model_parallel_size == 1:
         return batch
     if mcore_013:

@@ -1115,6 +1115,33 @@ class Template(ProcessorMixin):
             None. The input messages list is updated in-place.
         """
         messages = inputs.messages
+        i = 0
+        while i < len(messages):
+            message = messages[i]
+            role = message.get('role')
+            if role == 'observer':
+                message['role'] = 'user'
+                content = message.get('content')
+                if isinstance(content, str) and content:
+                    message['content'] = f'Observer:\n{content}'
+                i += 1
+                continue
+            if role == 'tool':
+                content = message.get('content')
+                if isinstance(content, str) and content:
+                    tool_content = f'Tool:\n{content}'
+                else:
+                    tool_content = 'Tool:'
+                if i + 1 < len(messages) and messages[i + 1].get('role') == 'user':
+                    next_content = messages[i + 1].get('content') or ''
+                    if isinstance(next_content, str):
+                        messages[i + 1]['content'] = f'{tool_content}\n{next_content}'
+                    messages.pop(i)
+                    continue
+                message['role'] = 'user'
+                if isinstance(content, str):
+                    message['content'] = tool_content
+            i += 1
         if len(messages) < 2:
             return
         i = 1
@@ -1735,10 +1762,13 @@ class Template(ProcessorMixin):
                 v = batch[0].get(k)
                 if v is not None:
                     res[k] = v if k == 'channel' else [v]
+            if batch[0].get('sample_ids') is not None:
+                res['sample_ids'] = [batch[0]['sample_ids']]
         else:
             inputs_embeds = [b['inputs_embeds'] for b in batch if b.get('inputs_embeds') is not None]
             input_ids = [b['input_ids'] for b in batch if b.get('input_ids') is not None]
             channel = [b.get('channel') for b in batch]
+            sample_ids = [b.get('sample_ids') for b in batch if b.get('sample_ids') is not None]
 
             if inputs_embeds:
                 res['inputs_embeds'] = inputs_embeds
@@ -1746,6 +1776,8 @@ class Template(ProcessorMixin):
                 res['input_ids'] = input_ids
             if any(channel):
                 res['channel'] = channel
+            if sample_ids:
+                res['sample_ids'] = sample_ids
 
             for key in ['labels', 'loss_scale', 'position_ids', 'token_type_ids']:
                 val = [b[key] for b in batch if b.get(key) is not None]
@@ -1776,6 +1808,8 @@ class Template(ProcessorMixin):
                 res[key][i] = val
             if not seq_lens:
                 seq_lens = [seq.shape[0] for seq in res[key]]
+        if 'sample_ids' in res:
+            res['sample_ids'] = torch.tensor(res['sample_ids'], dtype=torch.int64)
         if not self.padding_free and seq_lens and ('input_ids' in res or 'inputs_embeds' in res):
             attention_mask_key = 'attention_mask_2d' if self.use_megatron else 'attention_mask'
             res[attention_mask_key] = [torch.ones(seq_len, dtype=torch.int64) for seq_len in seq_lens]

@@ -1,5 +1,6 @@
 # Copyright (c) ModelScope Contributors. All rights reserved.
 import inspect
+import hashlib
 import os
 import tempfile
 from typing import Any, Callable, Dict, Optional, Union
@@ -121,8 +122,23 @@ class EncodePreprocessor(RowPreprocessor):
         super().__init__()
         self.template = template
 
+    @staticmethod
+    def _to_sample_id(value: Any) -> Optional[int]:
+        if value is None:
+            return None
+        if isinstance(value, (int, np.integer)):
+            return int(value)
+        if isinstance(value, str):
+            digest = hashlib.md5(value.encode('utf-8')).digest()
+            return int.from_bytes(digest[:8], byteorder='big', signed=False)
+        return None
+
     def preprocess(self, row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        return self.template.encode(row, return_length=True)
+        encoded = self.template.encode(row, return_length=True)
+        sample_id = self._to_sample_id(row.get('id'))
+        if sample_id is not None:
+            encoded['sample_ids'] = sample_id
+        return encoded
 
 
 class AddLengthPreprocessor(EncodePreprocessor):
